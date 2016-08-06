@@ -1,0 +1,21 @@
+[package]
+name = "mod_prometheus"
+version = "0.1.0"
+authors = ["Moises Silva <moises.silva@gmail.com>"]
+
+[dependencies]
+
+[dependencies.freeswitchrs]
+path = ".."
+
+[lib]
+crate-type = ["dylib"]
+name = "mod_prometheus"
+path = "mod_prometheus.rs"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
