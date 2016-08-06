@@ -4,7 +4,6 @@ extern crate freeswitchrs;
 use freeswitchrs::raw as fsr;
 use freeswitchrs::mods::*; // This will get replaced with a mods prelude
 use freeswitchrs::Status;
-use std::borrow::Cow;
 
 fn prometheus_load(mod_int: &ModInterface) -> Status {
     mod_int.add_raw_api("counter_increase", "Increase counter", "counter_increase", counter_increase_api);
@@ -27,7 +26,7 @@ static MOD_PROMETHEUS_DEF: ModDefinition = ModDefinition {
     runtime: None,
 };
 
-freeswitch_export_mod!(mod_prometheus_module_interface, MOD_PROMETHEUS_DEF);
+freeswitch_export_mod!(libmod_prometheus_module_interface, MOD_PROMETHEUS_DEF);
 
 #[allow(unused_variables)]
 unsafe extern "C" fn counter_increase_api(cmd: *const std::os::raw::c_char,
