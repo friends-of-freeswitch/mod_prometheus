@@ -4,9 +4,14 @@ version = "0.1.0"
 authors = ["Moises Silva <moises.silva@gmail.com>"]
 
 [dependencies]
+lazy_static = "0.1.*"
+prometheus = { git = "https://github.com/moises-silva/prometheus-rs" }
 
 [dependencies.freeswitchrs]
 path = ".."
+
+#[dependencies.prometheus]
+#path = "/home/moy/src/rust/prometheus"
 
 [lib]
 crate-type = ["dylib"]
@@ -18,4 +23,3 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
-

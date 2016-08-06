@@ -1,9 +1,23 @@
 #[macro_use]
+extern crate lazy_static;
+
+#[macro_use]
 extern crate freeswitchrs;
+extern crate prometheus;
+
+use std::sync::{Arc, Mutex};
 
 use freeswitchrs::raw as fsr;
 use freeswitchrs::mods::*; // This will get replaced with a mods prelude
 use freeswitchrs::Status;
+
+use prometheus::Registry;
+
+lazy_static! {
+    static ref REGISTRY: Arc<Mutex<Registry>> = {
+        Arc::new(Mutex::new(prometheus::Registry::new("0.0.0.0".to_string(), 6780)))
+    };
+}
 
 fn prometheus_load(mod_int: &ModInterface) -> Status {
     mod_int.add_raw_api("counter_increase", "Increase counter", "counter_increase", counter_increase_api);
@@ -16,6 +30,8 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
         println!("{:?}/{:?} {} = {:?}", e.event_id(), s, e.flags(), b)
     });
     */
+    let ref reg = *REGISTRY;
+    prometheus::Registry::start(&reg);
     Ok(())
 }
 
