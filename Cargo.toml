@@ -6,9 +6,10 @@ authors = ["Moises Silva <moises.silva@gmail.com>"]
 [dependencies]
 lazy_static = "0.1.*"
 prometheus = { git = "https://github.com/moises-silva/prometheus-rs" }
+freeswitchrs = { git = "https://github.com/moises-silva/freeswitchrs" }
 
-[dependencies.freeswitchrs]
-path = ".."
+#[dependencies.freeswitchrs]
+#path = ".."
 
 #[dependencies.prometheus]
 #path = "/home/moy/src/rust/prometheus"
