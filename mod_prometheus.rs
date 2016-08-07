@@ -35,10 +35,16 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
     Ok(())
 }
 
+fn prometheus_unload() -> Status {
+    let ref reg = *REGISTRY;
+    prometheus::Registry::stop(&reg);
+    Ok(())
+}
+
 static MOD_PROMETHEUS_DEF: ModDefinition = ModDefinition {
     name: "mod_prometheus",
     load: prometheus_load,
-    shutdown: None,
+    shutdown: Some(prometheus_unload),
     runtime: None,
 };
 
