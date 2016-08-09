@@ -1,9 +1,12 @@
 // TODO:
+// - Refactor code to avoid using so many static globals and hide the ugliness
+//   of Arc<Mutex<Counter|Gauge>>>
+// - Make bindaddr configurable
 // - Initialize counters/gauges to current values on module load
 //   using switch_core_session_count(), switch_core_session_ctl() etc
-// - Make bindaddr configurable
 // - Allow configuring metrics that can be later references the dialplan
 // - Add dimensions to metrics (e.g inbound per profile)
+// - Add error metrics (based on log errors/warnings)
 #[macro_use]
 extern crate lazy_static;
 
@@ -34,6 +37,14 @@ lazy_static! {
         Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_session_count".to_string(),
                                                      "FreeSWITCH Session Count".to_string())))
     };
+    static ref METRIC_SESSIONS_ANSWERED: Arc<Mutex<Counter>> = {
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_answered".to_string(),
+                                                   "FreeSWITCH Answered Sessions Count".to_string())))
+    };
+    static ref METRIC_SESSIONS_FAILED: Arc<Mutex<Counter>> = {
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_failed".to_string(),
+                                                     "FreeSWITCH Failed Sessions Count".to_string())))
+    };
     static ref METRIC_SESSIONS_INBOUND: Arc<Mutex<Counter>> = {
         Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound".to_string(),
                                                    "FreeSWITCH Inbound Sessions Count".to_string())))
@@ -41,6 +52,10 @@ lazy_static! {
     static ref METRIC_SESSIONS_INBOUND_ANSWERED: Arc<Mutex<Counter>> = {
         Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound_answered".to_string(),
                                                    "FreeSWITCH Answered Inbound Sessions Count".to_string())))
+    };
+    static ref METRIC_SESSIONS_INBOUND_FAILED: Arc<Mutex<Counter>> = {
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound_failed".to_string(),
+                                                   "FreeSWITCH Failed Inbound Sessions Count".to_string())))
     };
     static ref METRIC_SESSIONS_OUTBOUND: Arc<Mutex<Counter>> = {
         Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound".to_string(),
@@ -50,9 +65,9 @@ lazy_static! {
         Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound_answered".to_string(),
                                                    "FreeSWITCH Answered Outbound Sessions Count".to_string())))
     };
-    static ref METRIC_SESSIONS_ANSWERED: Arc<Mutex<Counter>> = {
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_answered".to_string(),
-                                                   "FreeSWITCH Answered Sessions Count".to_string())))
+    static ref METRIC_SESSIONS_OUTBOUND_FAILED : Arc<Mutex<Counter>> = {
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound_failed".to_string(),
+                                                   "FreeSWITCH Failed Outbound Sessions Count".to_string())))
     };
     static ref METRIC_SESSIONS_ACTIVE: Arc<Mutex<Gauge>> = {
         Arc::new(Mutex::new(prometheus::Gauge::new("freeswitch_sessions_active".to_string(),
@@ -76,18 +91,24 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
         let mut r = reg.lock().unwrap();
         r.register_counter((*METRIC_HEARTBEAT_COUNT).clone());
         r.register_counter((*METRIC_SESSION_COUNT).clone());
+        r.register_counter((*METRIC_SESSIONS_FAILED).clone());
+        r.register_counter((*METRIC_SESSIONS_ANSWERED).clone());
         r.register_counter((*METRIC_SESSIONS_INBOUND).clone());
         r.register_counter((*METRIC_SESSIONS_INBOUND_ANSWERED).clone());
+        r.register_counter((*METRIC_SESSIONS_INBOUND_FAILED).clone());
         r.register_counter((*METRIC_SESSIONS_OUTBOUND).clone());
         r.register_counter((*METRIC_SESSIONS_OUTBOUND_ANSWERED).clone());
-        r.register_counter((*METRIC_SESSIONS_ANSWERED).clone());
+        r.register_counter((*METRIC_SESSIONS_OUTBOUND_FAILED).clone());
         r.register_gauge((*METRIC_SESSIONS_ACTIVE).clone());
         r.register_gauge((*METRIC_SESSIONS_ASR).clone());
     }
 
+    // Heartbeat counts
     freeswitchrs::event_bind("mod_prometheus", fsr::event_types::HEARTBEAT, None, |_| {
         METRIC_HEARTBEAT_COUNT.lock().unwrap().increment();
     });
+
+    // New channel created
     freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_CREATE, None, |e| {
         METRIC_SESSION_COUNT.lock().unwrap().increment();
         METRIC_SESSIONS_ACTIVE.lock().unwrap().increment();
@@ -104,9 +125,8 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
             unsafe { fslog!(WARNING, "Received channel create event with no call direction: {:?}\n", b); }
         }
     });
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_DESTROY, None, |_| {
-        METRIC_SESSIONS_ACTIVE.lock().unwrap().decrement();
-    });
+
+    // Channel answered
     freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_ANSWER, None, |e| {
         METRIC_SESSIONS_ANSWERED.lock().unwrap().increment();
         if let Some(direction) = e.header("Call-Direction") {
@@ -117,8 +137,40 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
                 let asr = answered / METRIC_SESSIONS_OUTBOUND.lock().unwrap().value();
                 METRIC_SESSIONS_ASR.lock().unwrap().set(asr);
             }
+        } else {
+            let b = e.body().unwrap_or(Cow::Borrowed("<No Body>"));
+            unsafe { fslog!(WARNING, "Received channel answer event with no call direction: {:?}\n", b); }
         }
     });
+
+    // Channel hangup
+    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_HANGUP, None, |e| {
+        if let Some(answer) = e.header("Caller-Channel-Answered-Time") {
+            let parsed_time = answer.parse::<i64>();
+            if parsed_time.is_ok() && parsed_time.unwrap() == 0 as i64 {
+                if let Some(direction) = e.header("Call-Direction") {
+                    if direction == "inbound" {
+                        METRIC_SESSIONS_INBOUND_FAILED.lock().unwrap().increment();
+                    } else {
+                        METRIC_SESSIONS_OUTBOUND_FAILED.lock().unwrap().increment();
+                    }
+                    METRIC_SESSIONS_FAILED.lock().unwrap().increment();
+                } else {
+                    let b = e.body().unwrap_or(Cow::Borrowed("<No Body>"));
+                    unsafe { fslog!(WARNING, "Received channel hangup event with no call direction: {:?}\n", b); }
+                }
+            }
+        } else {
+            let b = e.body().unwrap_or(Cow::Borrowed("<No Body>"));
+            unsafe { fslog!(WARNING, "Received channel hangup event with no call answer time information: {:?}\n", b); }
+        }
+    });
+
+    // Channel destroyed
+    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_DESTROY, None, |_| {
+        METRIC_SESSIONS_ACTIVE.lock().unwrap().decrement();
+    });
+
     unsafe {
         fslog!(INFO, "Loaded Prometheus Metrics Module{}", "");
     }
@@ -135,6 +187,7 @@ fn prometheus_runtime() -> Status {
 fn prometheus_unload() -> Status {
     let ref reg = *REGISTRY;
     Registry::stop(&reg);
+    std::mem::drop(reg);
     Ok(())
 }
 
