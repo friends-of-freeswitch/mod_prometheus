@@ -77,6 +77,24 @@ lazy_static! {
         Arc::new(Mutex::new(prometheus::Gauge::new("freeswitch_sessions_asr".to_string(),
                                                    "FreeSWITCH Answer Seizure Ratio".to_string())))
     };
+
+    // Registration Metrics
+    static ref METRIC_REGISTRATION_COUNT: Arc<Mutex<Counter>> = {
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registration_count".to_string(),
+                                                   "FreeSWITCH Registration Count".to_string())))
+    };
+    static ref METRIC_REGISTRATION_ATTEMPTS: Arc<Mutex<Counter>> = {
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registration_attempts".to_string(),
+                                                   "FreeSWITCH Registration Attempts".to_string())))
+    };
+    static ref METRIC_REGISTRATION_FAILURES: Arc<Mutex<Counter>> = {
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registration_failures".to_string(),
+                                                   "FreeSWITCH Registration Failures".to_string())))
+    };
+    static ref METRIC_REGISTRATIONS_ACTIVE: Arc<Mutex<Gauge>> = {
+        Arc::new(Mutex::new(prometheus::Gauge::new("freeswitch_registrations_active".to_string(),
+                                                   "FreeSWITCH Active Registrations".to_string())))
+    };
 }
 
 fn prometheus_load(mod_int: &ModInterface) -> Status {
@@ -89,6 +107,8 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
     Registry::start(&reg);
     {
         let mut r = reg.lock().unwrap();
+
+        // Session metrics
         r.register_counter((*METRIC_HEARTBEAT_COUNT).clone());
         r.register_counter((*METRIC_SESSION_COUNT).clone());
         r.register_counter((*METRIC_SESSIONS_FAILED).clone());
@@ -101,6 +121,12 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
         r.register_counter((*METRIC_SESSIONS_OUTBOUND_FAILED).clone());
         r.register_gauge((*METRIC_SESSIONS_ACTIVE).clone());
         r.register_gauge((*METRIC_SESSIONS_ASR).clone());
+
+        // Registration metrics
+        r.register_counter((*METRIC_REGISTRATION_COUNT).clone());
+        r.register_counter((*METRIC_REGISTRATION_ATTEMPTS).clone());
+        r.register_counter((*METRIC_REGISTRATION_FAILURES).clone());
+        r.register_gauge((*METRIC_REGISTRATIONS_ACTIVE).clone());
     }
 
     // Heartbeat counts
@@ -170,6 +196,32 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
     freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_DESTROY, None, |_| {
         METRIC_SESSIONS_ACTIVE.lock().unwrap().decrement();
     });
+
+    // FIXME: Registrations are bound to be outdated on restart (registrations are in the db)
+    // so we should fetch them on module load to get the counters initialized
+
+    // Registration attempts
+    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register_attempt"), |_| {
+        METRIC_REGISTRATION_ATTEMPTS.lock().unwrap().increment();
+    });
+
+    // Registration failures
+    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register_failure"), |_| {
+        METRIC_REGISTRATION_FAILURES.lock().unwrap().increment();
+    });
+
+    // Registration counters
+    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register"), |_| {
+        METRIC_REGISTRATION_COUNT.lock().unwrap().increment();
+        METRIC_REGISTRATIONS_ACTIVE.lock().unwrap().increment();
+    });
+    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::unregister"), |_| {
+        METRIC_REGISTRATIONS_ACTIVE.lock().unwrap().decrement();
+    });
+    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::expire"), |_| {
+        METRIC_REGISTRATIONS_ACTIVE.lock().unwrap().decrement();
+    });
+
 
     unsafe {
         fslog!(INFO, "Loaded Prometheus Metrics Module{}", "");
