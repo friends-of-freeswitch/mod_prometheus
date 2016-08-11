@@ -240,62 +240,6 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
     Ok(())
 }
 
-fn prometheus_unload() -> Status {
-    let ref reg = *REGISTRY;
-    Registry::stop(&reg);
-    std::mem::drop(reg);
-    Ok(())
-}
-
-static MOD_PROMETHEUS_DEF: ModDefinition = ModDefinition {
-    name: "mod_prometheus",
-    load: prometheus_load,
-    runtime: None,
-    shutdown: Some(prometheus_unload)
-};
-
-freeswitch_export_mod!(libmod_prometheus_module_interface, MOD_PROMETHEUS_DEF);
-
-#[allow(unused_variables)]
-unsafe extern "C" fn counter_increase_api(cmd: *const std::os::raw::c_char,
-                                          session: *mut fsr::core_session,
-                                          stream: *mut fsr::stream_handle)
-                                          -> fsr::status {
-    let cmdopt = fsr::ptr_to_str(cmd);
-    if !cmdopt.is_some() {
-        (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("Invalid arguments"));
-        fsr::status::FALSE
-    } else {
-        let cmdstr = cmdopt.unwrap();
-        let args: Vec<&str> = cmdstr.split(' ').collect();
-        let name = args[0];
-        let by = if args.len() > 1 {
-            let r = args[1].parse::<f64>();
-            if r.is_ok() {
-                r.unwrap()
-            } else {
-                (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("Invalid increase value"));
-                return fsr::status::FALSE;
-            }
-        } else { 1 as f64 };
-        let v: f64;
-        {
-            let mut counters = USER_COUNTERS.lock().unwrap();
-            if !counters.contains_key(name) {
-                let name = name.to_string();
-                let counter = Arc::new(Mutex::new(Counter::new(name.clone(), name.clone())));
-                counters.insert(name, counter.clone());
-                let ref reg = *REGISTRY;
-                reg.lock().unwrap().register_counter(counter);
-            }
-            v = counters[name].lock().unwrap().increment_by(by);
-        }
-        let out = format!("+OK {}", v);
-        (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
-        fsr::status::SUCCESS
-    }
-}
-
 fn parse_metric_api_args(cmd: *const std::os::raw::c_char,
                          stream: *mut fsr::stream_handle)
                          -> Option<(String, f64)> {
@@ -317,6 +261,32 @@ fn parse_metric_api_args(cmd: *const std::os::raw::c_char,
         }
     } else { 1 as f64 };
     Some((name.to_string(), val))
+}
+
+#[allow(unused_variables)]
+unsafe extern "C" fn counter_increase_api(cmd: *const std::os::raw::c_char,
+                                          session: *mut fsr::core_session,
+                                          stream: *mut fsr::stream_handle)
+                                          -> fsr::status {
+    let argsopt = parse_metric_api_args(cmd, stream);
+    if !argsopt.is_some() {
+        return fsr::status::FALSE;
+    }
+    let v: f64;
+    let (name, val) = argsopt.unwrap();
+    {
+        let mut counters = USER_COUNTERS.lock().unwrap();
+        if !counters.contains_key(&name) {
+            let counter = Arc::new(Mutex::new(Counter::new(name.clone(), name.clone())));
+            counters.insert(name.clone(), counter.clone());
+            let ref reg = *REGISTRY;
+            reg.lock().unwrap().register_counter(counter);
+        }
+        v = counters[&name].lock().unwrap().increment_by(val);
+    }
+    let out = format!("+OK {}", v);
+    (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
+    fsr::status::SUCCESS
 }
 
 #[allow(unused_variables)]
@@ -344,3 +314,19 @@ unsafe extern "C" fn gauge_set_api(cmd: *const std::os::raw::c_char,
     (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
     fsr::status::SUCCESS
 }
+
+fn prometheus_unload() -> Status {
+    let ref reg = *REGISTRY;
+    Registry::stop(&reg);
+    std::mem::drop(reg);
+    Ok(())
+}
+
+static MOD_PROMETHEUS_DEF: ModDefinition = ModDefinition {
+    name: "mod_prometheus",
+    load: prometheus_load,
+    runtime: None,
+    shutdown: Some(prometheus_unload)
+};
+
+freeswitch_export_mod!(libmod_prometheus_module_interface, MOD_PROMETHEUS_DEF);
