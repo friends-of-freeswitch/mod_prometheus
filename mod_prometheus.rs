@@ -53,11 +53,11 @@ lazy_static! {
     static ref REGISTRY: Arc<Mutex<Registry>> = {
         Arc::new(Mutex::new(Registry::new("0.0.0.0".to_string(), 6780)))
     };
-    static ref USER_COUNTERS: HashMap<String, Arc<Mutex<Counter>>> = {
-        HashMap::new()
+    static ref USER_COUNTERS: Mutex<HashMap<String, Arc<Mutex<Counter>>>> = {
+        Mutex::new(HashMap::new())
     };
-    static ref USER_GAUGES: HashMap<String, Arc<Mutex<Gauge>>> = {
-        HashMap::new()
+    static ref USER_GAUGES: Mutex<HashMap<String, Arc<Mutex<Gauge>>>> = {
+        Mutex::new(HashMap::new())
     };
     static ref COUNTERS: [Arc<Mutex<Counter>>;13] = {[
         Arc::new(Mutex::new(Counter::new("freeswitch_heartbeats".to_string(),
@@ -232,7 +232,8 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
         GAUGES[FSGauge::RegistrationsActive].lock().unwrap().decrement();
     });
 
-    mod_int.add_raw_api("counter_increase", "Increase counter", "counter_increase", counter_increase_api);
+    mod_int.add_raw_api("prom_counter_increase", "Increase Counter", "Increase Counter", counter_increase_api);
+    mod_int.add_raw_api("prom_gauge_set", "Set Gauge Value", "Set Gauge Value", gauge_set_api);
     unsafe {
         fslog!(INFO, "Loaded Prometheus Metrics Module{}", "");
     }
@@ -267,6 +268,86 @@ unsafe extern "C" fn counter_increase_api(cmd: *const std::os::raw::c_char,
                                           session: *mut fsr::core_session,
                                           stream: *mut fsr::stream_handle)
                                           -> fsr::status {
-    (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("OK"));
+    let cmdopt = fsr::ptr_to_str(cmd);
+    if !cmdopt.is_some() {
+        (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("Invalid arguments"));
+        fsr::status::FALSE
+    } else {
+        let cmdstr = cmdopt.unwrap();
+        let args: Vec<&str> = cmdstr.split(' ').collect();
+        let name = args[0];
+        let by = if args.len() > 1 {
+            let r = args[1].parse::<f64>();
+            if r.is_ok() {
+                r.unwrap()
+            } else {
+                (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("Invalid increase value"));
+                return fsr::status::FALSE;
+            }
+        } else { 1 as f64 };
+        let v: f64;
+        {
+            let mut counters = USER_COUNTERS.lock().unwrap();
+            if !counters.contains_key(name) {
+                let name = name.to_string();
+                let counter = Arc::new(Mutex::new(Counter::new(name.clone(), name.clone())));
+                counters.insert(name, counter.clone());
+                let ref reg = *REGISTRY;
+                reg.lock().unwrap().register_counter(counter);
+            }
+            v = counters[name].lock().unwrap().increment_by(by);
+        }
+        let out = format!("+OK {}", v);
+        (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
+        fsr::status::SUCCESS
+    }
+}
+
+fn parse_metric_api_args(cmd: *const std::os::raw::c_char,
+                         stream: *mut fsr::stream_handle)
+                         -> Option<(String, f64)> {
+    let cmdopt = unsafe { fsr::ptr_to_str(cmd) };
+    if !cmdopt.is_some() {
+        unsafe { (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("Invalid arguments")); }
+        return None;
+    }
+    let cmdstr = cmdopt.unwrap();
+    let args: Vec<&str> = cmdstr.split(' ').collect();
+    let name = args[0];
+    let val = if args.len() > 1 {
+        let r = args[1].parse::<f64>();
+        if r.is_ok() {
+            r.unwrap()
+        } else {
+            unsafe { (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("Invalid increase value")); }
+            return None;
+        }
+    } else { 1 as f64 };
+    Some((name.to_string(), val))
+}
+
+#[allow(unused_variables)]
+unsafe extern "C" fn gauge_set_api(cmd: *const std::os::raw::c_char,
+                                   session: *mut fsr::core_session,
+                                   stream: *mut fsr::stream_handle)
+                                   -> fsr::status {
+    let argsopt = parse_metric_api_args(cmd, stream);
+    if !argsopt.is_some() {
+        return fsr::status::FALSE;
+    }
+    let v: f64;
+    let (name, val) = argsopt.unwrap();
+    {
+        let mut gauges = USER_GAUGES.lock().unwrap();
+        if !gauges.contains_key(&name) {
+            let gauge = Arc::new(Mutex::new(Gauge::new(name.clone(), name.clone())));
+            gauges.insert(name.clone(), gauge.clone());
+            let ref reg = *REGISTRY;
+            reg.lock().unwrap().register_gauge(gauge);
+        }
+        v = gauges[&name].lock().unwrap().set(val);
+    }
+    let out = format!("+OK {}", v);
+    (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
     fsr::status::SUCCESS
 }
