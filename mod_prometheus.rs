@@ -7,6 +7,9 @@
 // - Allow configuring metrics that can be later references the dialplan
 // - Add dimensions to metrics (e.g inbound per profile)
 // - Add error metrics (based on log errors/warnings)
+// - Add dialplan app, so if a gauge increased is associated with a session
+//   it can be auto-decremented when the session is destroyed
+// - Add label support
 #[macro_use]
 extern crate lazy_static;
 
@@ -232,8 +235,12 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
         GAUGES[FSGauge::RegistrationsActive].lock().unwrap().decrement();
     });
 
-    mod_int.add_raw_api("prom_counter_increase", "Increase Counter", "Increase Counter", counter_increase_api);
+    /* APIs */
+    mod_int.add_raw_api("prom_counter_increment", "Increment Counter", "Increment Counter", counter_increment_api);
     mod_int.add_raw_api("prom_gauge_set", "Set Gauge Value", "Set Gauge Value", gauge_set_api);
+    mod_int.add_raw_api("prom_gauge_increment", "Increase Gauge Value", "Increase Gauge Value", gauge_increment_api);
+    mod_int.add_raw_api("prom_gauge_decrement", "Decrement Gauge Value", "Decrement Gauge Value", gauge_decrement_api);
+
     unsafe {
         fslog!(INFO, "Loaded Prometheus Metrics Module{}", "");
     }
@@ -264,10 +271,10 @@ fn parse_metric_api_args(cmd: *const std::os::raw::c_char,
 }
 
 #[allow(unused_variables)]
-unsafe extern "C" fn counter_increase_api(cmd: *const std::os::raw::c_char,
-                                          session: *mut fsr::core_session,
-                                          stream: *mut fsr::stream_handle)
-                                          -> fsr::status {
+unsafe extern "C" fn counter_increment_api(cmd: *const std::os::raw::c_char,
+                                           session: *mut fsr::core_session,
+                                           stream: *mut fsr::stream_handle)
+                                           -> fsr::status {
     let argsopt = parse_metric_api_args(cmd, stream);
     if !argsopt.is_some() {
         return fsr::status::FALSE;
@@ -289,6 +296,19 @@ unsafe extern "C" fn counter_increase_api(cmd: *const std::os::raw::c_char,
     fsr::status::SUCCESS
 }
 
+fn gauge_get(name: &str) -> Arc<Mutex<Gauge>> {
+    let mut gauges = USER_GAUGES.lock().unwrap();
+    if gauges.contains_key(name) {
+        gauges[name].clone()
+    } else {
+        let gauge = Arc::new(Mutex::new(Gauge::new(name.to_string(), name.to_string())));
+        gauges.insert(name.to_string(), gauge.clone());
+        let ref reg = *REGISTRY;
+        reg.lock().unwrap().register_gauge(gauge.clone());
+        gauge
+    }
+}
+
 #[allow(unused_variables)]
 unsafe extern "C" fn gauge_set_api(cmd: *const std::os::raw::c_char,
                                    session: *mut fsr::core_session,
@@ -298,18 +318,43 @@ unsafe extern "C" fn gauge_set_api(cmd: *const std::os::raw::c_char,
     if !argsopt.is_some() {
         return fsr::status::FALSE;
     }
-    let v: f64;
     let (name, val) = argsopt.unwrap();
-    {
-        let mut gauges = USER_GAUGES.lock().unwrap();
-        if !gauges.contains_key(&name) {
-            let gauge = Arc::new(Mutex::new(Gauge::new(name.clone(), name.clone())));
-            gauges.insert(name.clone(), gauge.clone());
-            let ref reg = *REGISTRY;
-            reg.lock().unwrap().register_gauge(gauge);
-        }
-        v = gauges[&name].lock().unwrap().set(val);
+    let gauge = gauge_get(&name);
+    let v = gauge.lock().unwrap().set(val);
+    let out = format!("+OK {}", v);
+    (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
+    fsr::status::SUCCESS
+}
+
+#[allow(unused_variables)]
+unsafe extern "C" fn gauge_increment_api(cmd: *const std::os::raw::c_char,
+                                         session: *mut fsr::core_session,
+                                         stream: *mut fsr::stream_handle)
+                                         -> fsr::status {
+    let argsopt = parse_metric_api_args(cmd, stream);
+    if !argsopt.is_some() {
+        return fsr::status::FALSE;
     }
+    let (name, val) = argsopt.unwrap();
+    let gauge = gauge_get(&name);
+    let v = gauge.lock().unwrap().increment_by(val);
+    let out = format!("+OK {}", v);
+    (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
+    fsr::status::SUCCESS
+}
+
+#[allow(unused_variables)]
+unsafe extern "C" fn gauge_decrement_api(cmd: *const std::os::raw::c_char,
+                                         session: *mut fsr::core_session,
+                                         stream: *mut fsr::stream_handle)
+                                         -> fsr::status {
+    let argsopt = parse_metric_api_args(cmd, stream);
+    if !argsopt.is_some() {
+        return fsr::status::FALSE;
+    }
+    let (name, val) = argsopt.unwrap();
+    let gauge = gauge_get(&name);
+    let v = gauge.lock().unwrap().decrement_by(val);
     let out = format!("+OK {}", v);
     (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
     fsr::status::SUCCESS
