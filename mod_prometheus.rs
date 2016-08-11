@@ -240,13 +240,6 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
     Ok(())
 }
 
-fn prometheus_runtime() -> Status {
-    //let ref reg = *REGISTRY;
-    //loop {
-    //}
-    Err(fsr::status::TERM)
-}
-
 fn prometheus_unload() -> Status {
     let ref reg = *REGISTRY;
     Registry::stop(&reg);
@@ -257,7 +250,7 @@ fn prometheus_unload() -> Status {
 static MOD_PROMETHEUS_DEF: ModDefinition = ModDefinition {
     name: "mod_prometheus",
     load: prometheus_load,
-    runtime: Some(prometheus_runtime),
+    runtime: None,
     shutdown: Some(prometheus_unload)
 };
 
