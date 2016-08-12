@@ -164,7 +164,7 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
             }
         } else {
             let b = e.body().unwrap_or(Cow::Borrowed("<No Body>"));
-            unsafe { fslog!(WARNING, "Received channel create event with no call direction: {:?}\n", b); }
+            fslog!(WARNING, "Received channel create event with no call direction: {:?}\n", b);
         }
     });
 
@@ -181,7 +181,7 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
             }
         } else {
             let b = e.body().unwrap_or(Cow::Borrowed("<No Body>"));
-            unsafe { fslog!(WARNING, "Received channel answer event with no call direction: {:?}\n", b); }
+            fslog!(WARNING, "Received channel answer event with no call direction: {:?}\n", b);
         }
     });
 
@@ -199,12 +199,12 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
                     COUNTERS[FSCounter::SessionsFailed].lock().unwrap().increment();
                 } else {
                     let b = e.body().unwrap_or(Cow::Borrowed("<No Body>"));
-                    unsafe { fslog!(WARNING, "Received channel hangup event with no call direction: {:?}\n", b); }
+                    fslog!(WARNING, "Received channel hangup event with no call direction: {:?}\n", b);
                 }
             }
         } else {
             let b = e.body().unwrap_or(Cow::Borrowed("<No Body>"));
-            unsafe { fslog!(WARNING, "Received channel hangup event with no call answer time information: {:?}\n", b); }
+            fslog!(WARNING, "Received channel hangup event with no call answer time information: {:?}\n", b);
         }
     });
 
@@ -251,9 +251,7 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
                                 gauge_increment_app,
                                 fsr::application_flag_enum::SUPPORT_NOMEDIA);
 
-    unsafe {
-        fslog!(INFO, "Loaded Prometheus Metrics Module{}", "");
-    }
+    fslog!(INFO, "Loaded Prometheus Metrics Module");
     Ok(())
 }
 
@@ -262,12 +260,10 @@ fn parse_metric_api_args(cmd: *const std::os::raw::c_char,
                          -> Option<(String, f64)> {
     let cmdopt = unsafe { fsr::ptr_to_str(cmd) };
     if !cmdopt.is_some() {
-        unsafe {
-            if let Some(s) = stream {
-                (*s).write_function.unwrap()(s, fsr::str_to_ptr("Invalid arguments"));
-            } else {
-                fslog!(ERROR, "Invalid metric arguments{}", "");
-            }
+        if let Some(s) = stream {
+            unsafe { (*s).write_function.unwrap()(s, fsr::str_to_ptr("Invalid arguments")); }
+        } else {
+            fslog!(ERROR, "Invalid metric arguments");
         }
         return None;
     }
@@ -279,12 +275,10 @@ fn parse_metric_api_args(cmd: *const std::os::raw::c_char,
         if r.is_ok() {
             r.unwrap()
         } else {
-            unsafe {
-                if let Some(s) = stream {
-                    (*s).write_function.unwrap()(s, fsr::str_to_ptr("Invalid metric value"));
-                } else {
-                    fslog!(ERROR, "Invalid metric value{}", "");
-                }
+            if let Some(s) = stream {
+                unsafe { (*s).write_function.unwrap()(s, fsr::str_to_ptr("Invalid metric value")); }
+            } else {
+                fslog!(ERROR, "Invalid metric value");
             }
             return None;
         }
