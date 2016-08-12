@@ -26,10 +26,13 @@ use std::ops::Index;
 use freeswitchrs::raw as fsr;
 use freeswitchrs::mods::*; // This will get replaced with a mods prelude
 use freeswitchrs::Status;
-use freeswitchrs::raw::log_level::{INFO, WARNING};
+use freeswitchrs::raw::log_level::{INFO, WARNING, ERROR};
 
 use prometheus::{Registry, Counter, Gauge};
 
+// Ugh, note that these counter/gauge index values must map to the index
+// in the COUNTERS/GAUGES globals. There is probably a less error-prone way
+// to do this, but as of today it seems one can't iterate over enums in rust
 enum FSCounter {
     Heartbeats = 0,
     Sessions,
@@ -241,6 +244,13 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
     mod_int.add_raw_api("prom_gauge_increment", "Increase Gauge Value", "Increase Gauge Value", gauge_increment_api);
     mod_int.add_raw_api("prom_gauge_decrement", "Decrement Gauge Value", "Decrement Gauge Value", gauge_decrement_api);
 
+    /* Applications */
+    mod_int.add_raw_application("prom_gauge_increment",
+                                "Increment Gauge", "Increment Gauge",
+                                "prom_gauge_increment <gauge> [<value>]",
+                                gauge_increment_app,
+                                fsr::application_flag_enum::SUPPORT_NOMEDIA);
+
     unsafe {
         fslog!(INFO, "Loaded Prometheus Metrics Module{}", "");
     }
@@ -248,11 +258,17 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
 }
 
 fn parse_metric_api_args(cmd: *const std::os::raw::c_char,
-                         stream: *mut fsr::stream_handle)
+                         stream: Option<*mut fsr::stream_handle>)
                          -> Option<(String, f64)> {
     let cmdopt = unsafe { fsr::ptr_to_str(cmd) };
     if !cmdopt.is_some() {
-        unsafe { (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("Invalid arguments")); }
+        unsafe {
+            if let Some(s) = stream {
+                (*s).write_function.unwrap()(s, fsr::str_to_ptr("Invalid arguments"));
+            } else {
+                fslog!(ERROR, "Invalid metric arguments{}", "");
+            }
+        }
         return None;
     }
     let cmdstr = cmdopt.unwrap();
@@ -263,7 +279,13 @@ fn parse_metric_api_args(cmd: *const std::os::raw::c_char,
         if r.is_ok() {
             r.unwrap()
         } else {
-            unsafe { (*stream).write_function.unwrap()(stream, fsr::str_to_ptr("Invalid increase value")); }
+            unsafe {
+                if let Some(s) = stream {
+                    (*s).write_function.unwrap()(s, fsr::str_to_ptr("Invalid metric value"));
+                } else {
+                    fslog!(ERROR, "Invalid metric value{}", "");
+                }
+            }
             return None;
         }
     } else { 1 as f64 };
@@ -275,7 +297,7 @@ unsafe extern "C" fn counter_increment_api(cmd: *const std::os::raw::c_char,
                                            session: *mut fsr::core_session,
                                            stream: *mut fsr::stream_handle)
                                            -> fsr::status {
-    let argsopt = parse_metric_api_args(cmd, stream);
+    let argsopt = parse_metric_api_args(cmd, Some(stream));
     if !argsopt.is_some() {
         return fsr::status::FALSE;
     }
@@ -314,7 +336,7 @@ unsafe extern "C" fn gauge_set_api(cmd: *const std::os::raw::c_char,
                                    session: *mut fsr::core_session,
                                    stream: *mut fsr::stream_handle)
                                    -> fsr::status {
-    let argsopt = parse_metric_api_args(cmd, stream);
+    let argsopt = parse_metric_api_args(cmd, Some(stream));
     if !argsopt.is_some() {
         return fsr::status::FALSE;
     }
@@ -331,7 +353,7 @@ unsafe extern "C" fn gauge_increment_api(cmd: *const std::os::raw::c_char,
                                          session: *mut fsr::core_session,
                                          stream: *mut fsr::stream_handle)
                                          -> fsr::status {
-    let argsopt = parse_metric_api_args(cmd, stream);
+    let argsopt = parse_metric_api_args(cmd, Some(stream));
     if !argsopt.is_some() {
         return fsr::status::FALSE;
     }
@@ -348,7 +370,7 @@ unsafe extern "C" fn gauge_decrement_api(cmd: *const std::os::raw::c_char,
                                          session: *mut fsr::core_session,
                                          stream: *mut fsr::stream_handle)
                                          -> fsr::status {
-    let argsopt = parse_metric_api_args(cmd, stream);
+    let argsopt = parse_metric_api_args(cmd, Some(stream));
     if !argsopt.is_some() {
         return fsr::status::FALSE;
     }
@@ -358,6 +380,18 @@ unsafe extern "C" fn gauge_decrement_api(cmd: *const std::os::raw::c_char,
     let out = format!("+OK {}", v);
     (*stream).write_function.unwrap()(stream, fsr::str_to_ptr(&out));
     fsr::status::SUCCESS
+}
+
+#[allow(unused_variables)]
+unsafe extern "C" fn gauge_increment_app(session: *mut fsr::core_session,
+                                         data: *const std::os::raw::c_char) {
+    let argsopt = parse_metric_api_args(data, None);
+    if argsopt.is_some() {
+        let (name, val) = argsopt.unwrap();
+        let gauge = gauge_get(&name);
+        let v = gauge.lock().unwrap().increment_by(val);
+        fslog!(INFO, "Incremented gauge {} to {}", name, v);
+    }
 }
 
 fn prometheus_unload() -> Status {
