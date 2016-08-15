@@ -1,4 +1,5 @@
 // TODO:
+// - Unbind from events on unload
 // - Refactor code to avoid using so many static globals and hide the ugliness
 //   of Arc<Mutex<Counter|Gauge>>>
 // - Make bindaddr configurable
@@ -26,7 +27,7 @@ use std::ops::Index;
 use freeswitchrs::raw as fsr;
 use freeswitchrs::mods::*; // This will get replaced with a mods prelude
 use freeswitchrs::Status;
-use freeswitchrs::raw::log_level::{INFO, WARNING, ERROR};
+use freeswitchrs::raw::log_level::{DEBUG, INFO, WARNING, ERROR};
 
 use prometheus::{Registry, Counter, Gauge};
 
@@ -55,10 +56,9 @@ enum FSGauge {
     RegistrationsActive
 }
 
+static mut REGPTR: *mut Arc<Mutex<Registry>> = 0 as *mut Arc<Mutex<Registry>>;
+
 lazy_static! {
-    static ref REGISTRY: Arc<Mutex<Registry>> = {
-        Arc::new(Mutex::new(Registry::new("0.0.0.0".to_string(), 6780)))
-    };
     static ref USER_COUNTERS: Mutex<HashMap<String, Arc<Mutex<Counter>>>> = {
         Mutex::new(HashMap::new())
     };
@@ -133,7 +133,11 @@ impl Index<FSGauge> for [Arc<Mutex<Gauge>>] {
 }
 
 fn prometheus_load(mod_int: &ModInterface) -> Status {
-    let ref reg = *REGISTRY;
+    unsafe {
+        let reg = Box::new(Arc::new(Mutex::new(Registry::new("0.0.0.0".to_string(), 6780))));
+        REGPTR = Box::into_raw(reg);
+    };
+    let reg = unsafe { &*REGPTR };
     // At some point we'll have to configure things ...
     //let xml = fsr::xml_open_cfg();
     Registry::start(&reg);
@@ -302,7 +306,7 @@ unsafe extern "C" fn counter_increment_api(cmd: *const std::os::raw::c_char,
         if !counters.contains_key(&name) {
             let counter = Arc::new(Mutex::new(Counter::new(name.clone(), name.clone())));
             counters.insert(name.clone(), counter.clone());
-            let ref reg = *REGISTRY;
+            let reg = &*REGPTR;
             reg.lock().unwrap().register_counter(counter);
         }
         v = counters[&name].lock().unwrap().increment_by(val);
@@ -319,7 +323,7 @@ fn gauge_get(name: &str) -> Arc<Mutex<Gauge>> {
     } else {
         let gauge = Arc::new(Mutex::new(Gauge::new(name.to_string(), name.to_string())));
         gauges.insert(name.to_string(), gauge.clone());
-        let ref reg = *REGISTRY;
+        let reg = unsafe { &*REGPTR };
         reg.lock().unwrap().register_gauge(gauge.clone());
         gauge
     }
@@ -389,9 +393,16 @@ unsafe extern "C" fn gauge_increment_app(session: *mut fsr::core_session,
 }
 
 fn prometheus_unload() -> Status {
-    let ref reg = *REGISTRY;
+    let reg = unsafe { &*REGPTR };
+    USER_GAUGES.lock().unwrap().clear();
+    USER_COUNTERS.lock().unwrap().clear();
+    fslog!(DEBUG, "Stopping metric registry");
     Registry::stop(&reg);
     std::mem::drop(reg);
+    unsafe {
+        REGPTR = 0 as *mut Arc<Mutex<Registry>>;
+    }
+    fslog!(DEBUG, "Metric registry destroyed");
     Ok(())
 }
 
