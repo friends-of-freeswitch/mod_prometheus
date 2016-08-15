@@ -1,5 +1,7 @@
 // TODO:
-// - Unbind from events on unload
+// - Macro to bind event and store id? Ideally we should have the FS core remember the
+//   events this module registered and the core can then unregister them, the same way
+//   it works for module applications and APIs
 // - Refactor code to avoid using so many static globals and hide the ugliness
 //   of Arc<Mutex<Counter|Gauge>>>
 // - Make bindaddr configurable
@@ -116,6 +118,9 @@ lazy_static! {
         Arc::new(Mutex::new(prometheus::Gauge::new("freeswitch_registrations_active".to_string(),
                                                    "FreeSWITCH Active Registrations".to_string())))
     ]};
+    static ref EVENT_NODE_IDS: Mutex<Vec<u64>> = {
+        Mutex::new(Vec::new())
+    };
 }
 
 impl Index<FSCounter> for [Arc<Mutex<Counter>>] {
@@ -151,11 +156,13 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
         }
     }
     // Heartbeat counts
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::HEARTBEAT, None, |_| {
+    let mut id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::HEARTBEAT, None, |_| {
         COUNTERS[FSCounter::Heartbeats].lock().unwrap().increment();
     });
+    EVENT_NODE_IDS.lock().unwrap().push(id);
+
     // New channel created
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_CREATE, None, |e| {
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_CREATE, None, |e| {
         COUNTERS[FSCounter::Sessions].lock().unwrap().increment();
         GAUGES[FSGauge::SessionsActive].lock().unwrap().increment();
         if let Some(direction) = e.header("Call-Direction") {
@@ -171,9 +178,10 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
             fslog!(WARNING, "Received channel create event with no call direction: {:?}\n", b);
         }
     });
+    EVENT_NODE_IDS.lock().unwrap().push(id);
 
     // Channel answered
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_ANSWER, None, |e| {
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_ANSWER, None, |e| {
         COUNTERS[FSCounter::SessionsAnswered].lock().unwrap().increment();
         if let Some(direction) = e.header("Call-Direction") {
             if direction == "inbound" {
@@ -188,9 +196,10 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
             fslog!(WARNING, "Received channel answer event with no call direction: {:?}\n", b);
         }
     });
+    EVENT_NODE_IDS.lock().unwrap().push(id);
 
     // Channel hangup
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_HANGUP, None, |e| {
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_HANGUP, None, |e| {
         if let Some(answer) = e.header("Caller-Channel-Answered-Time") {
             let parsed_time = answer.parse::<i64>();
             if parsed_time.is_ok() && parsed_time.unwrap() == 0 as i64 {
@@ -211,36 +220,45 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
             fslog!(WARNING, "Received channel hangup event with no call answer time information: {:?}\n", b);
         }
     });
+    EVENT_NODE_IDS.lock().unwrap().push(id);
 
     // Channel destroyed
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_DESTROY, None, |_| {
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CHANNEL_DESTROY, None, |_| {
         GAUGES[FSGauge::SessionsActive].lock().unwrap().decrement();
     });
+    EVENT_NODE_IDS.lock().unwrap().push(id);
 
     // FIXME: Registrations are bound to be outdated on restart (registrations are in the db)
     // so we should fetch them on module load to get the counters initialized
 
     // Registration attempts
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register_attempt"), |_| {
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register_attempt"), |_| {
         COUNTERS[FSCounter::RegistrationAttempts].lock().unwrap().increment();
     });
+    EVENT_NODE_IDS.lock().unwrap().push(id);
 
     // Registration failures
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register_failure"), |_| {
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register_failure"), |_| {
         COUNTERS[FSCounter::RegistrationFailures].lock().unwrap().increment();
     });
+    EVENT_NODE_IDS.lock().unwrap().push(id);
 
     // Registration counters
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register"), |_| {
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::register"), |_| {
         COUNTERS[FSCounter::Registrations].lock().unwrap().increment();
         GAUGES[FSGauge::RegistrationsActive].lock().unwrap().increment();
     });
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::unregister"), |_| {
+    EVENT_NODE_IDS.lock().unwrap().push(id);
+
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::unregister"), |_| {
         GAUGES[FSGauge::RegistrationsActive].lock().unwrap().decrement();
     });
-    freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::expire"), |_| {
+    EVENT_NODE_IDS.lock().unwrap().push(id);
+
+    id = freeswitchrs::event_bind("mod_prometheus", fsr::event_types::CUSTOM, Some("sofia::expire"), |_| {
         GAUGES[FSGauge::RegistrationsActive].lock().unwrap().decrement();
     });
+    EVENT_NODE_IDS.lock().unwrap().push(id);
 
     /* APIs */
     mod_int.add_raw_api("prom_counter_increment", "Increment Counter", "Increment Counter", counter_increment_api);
@@ -396,6 +414,13 @@ fn prometheus_unload() -> Status {
     let reg = unsafe { &*REGPTR };
     USER_GAUGES.lock().unwrap().clear();
     USER_COUNTERS.lock().unwrap().clear();
+    {
+        let mut event_ids = EVENT_NODE_IDS.lock().unwrap();
+        for e in event_ids.iter() {
+            freeswitchrs::event_unbind(*e);
+        }
+        event_ids.clear();
+    }
     fslog!(DEBUG, "Stopping metric registry");
     Registry::stop(&reg);
     std::mem::drop(reg);
