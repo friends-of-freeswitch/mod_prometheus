@@ -5,7 +5,7 @@ authors = ["Moises Silva <moises.silva@gmail.com>"]
 
 [dependencies]
 lazy_static = "0.1.*"
-libc = "0.2"
+libc = "*"
 prometheus = { git = "https://github.com/moises-silva/prometheus-rs" }
 freeswitchrs = { git = "https://github.com/moises-silva/freeswitchrs" }
 
