@@ -21,7 +21,6 @@ You can also use FreeSWITCH ESL APIs to increase custom counters or gauges::
     fscli> prom_gauge_decrement my_gauge 2
 
 As all FreeSWITCH APIs, these functions can be used from the XML dialplan or the command line.
-s can be used from the XML dialplan or the command line.
 
 
 Install
