@@ -39,6 +39,16 @@ Installation instructions::
 Now you can access your host at port 6780 to check your metrics:
 http://YOUR_HOST:6780/
 
+For auto-load the module add this line at the end of your modules.conf 
+    $ sudo vi /etc/freeswitch/autoload_configs/modules.conf.xml
+
+        <!-- Third party modules -->
+        <!--<load module="mod_nibblebill"/>-->
+        <!--<load module="mod_callcenter"/>-->
+        <load module="libmod_prometheus"/>
+
+      </modules>
+    </configuration>
 
 Metrics
 =======
