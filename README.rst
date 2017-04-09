@@ -36,6 +36,11 @@ Installation instructions::
     $ netstat -nl | grep 6780
     tcp        0      0 0.0.0.0:6780            0.0.0.0:*               LISTEN
     
+    # For auto-load the module add this line at the end of your modules.conf 
+    $ sudo vi /etc/freeswitch/autoload_configs/modules.conf.xml
+
+        <load module="libmod_prometheus"/>
+    
 Now you can access your host at port 6780 to check your metrics:
 http://YOUR_HOST:6780/
 
