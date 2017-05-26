@@ -207,7 +207,7 @@ fn prometheus_load(mod_int: &ModInterface) -> Status {
                     if direction == "inbound" {
                         COUNTERS[FSCounter::SessionsInboundFailed].lock().unwrap().increment();
                     } else {
-                        COUNTERS[FSCounter::SessionsInboundFailed].lock().unwrap().increment();
+                        COUNTERS[FSCounter::SessionsOutboundFailed].lock().unwrap().increment();
                     }
                     COUNTERS[FSCounter::SessionsFailed].lock().unwrap().increment();
                 } else {
