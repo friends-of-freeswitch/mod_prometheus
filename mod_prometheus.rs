@@ -68,44 +68,44 @@ lazy_static! {
         Mutex::new(HashMap::new())
     };
     static ref COUNTERS: [Arc<Mutex<Counter>>;13] = {[
-        Arc::new(Mutex::new(Counter::new("freeswitch_heartbeats".to_string(),
+        Arc::new(Mutex::new(Counter::new("freeswitch_heartbeats_total".to_string(),
                                          "FreeSWITCH heartbeat count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_total".to_string(),
                                                      "FreeSWITCH Session Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_answered".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_answered_total".to_string(),
                                                      "FreeSWITCH Answered Sessions Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_failed".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_failed_total".to_string(),
                                                      "FreeSWITCH Failed Sessions Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound_total".to_string(),
                                                      "FreeSWITCH Inbound Sessions Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound_answered".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound_answered_total".to_string(),
                                                      "FreeSWITCH Answered Inbound Sessions Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound_failed".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_inbound_failed_total".to_string(),
                                                      "FreeSWITCH Failed Inbound Sessions Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound_total".to_string(),
                                                      "FreeSWITCH Outbound Sessions Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound_answered".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound_answered_total".to_string(),
                                                      "FreeSWITCH Answered Outbound Sessions Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound_failed".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_sessions_outbound_failed_total".to_string(),
                                                      "FreeSWITCH Failed Outbound Sessions Count".to_string()))),
 
         // Registration Metrics
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registrations".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registrations_total".to_string(),
                                                      "FreeSWITCH Registration Count".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registration_attempts".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registration_attempts_total".to_string(),
                                                      "FreeSWITCH Registration Attempts".to_string()))),
 
-        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registration_failures".to_string(),
+        Arc::new(Mutex::new(prometheus::Counter::new("freeswitch_registration_failures_total".to_string(),
                                                      "FreeSWITCH Registration Failures".to_string())))
     ]};
     static ref GAUGES: [Arc<Mutex<Gauge>>;3] = {[
