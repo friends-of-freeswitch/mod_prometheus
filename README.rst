@@ -50,22 +50,27 @@ Metrics
 
 These are the metrics provided by default::
 
-    freeswitch_heartbeats
-    freeswitch_registration_attempts
-    freeswitch_registration_failures
-    freeswitch_registrations
-    freeswitch_registrations_active
-    freeswitch_sessions
+Counters::
+
+    freeswitch_heartbeats_total
+    freeswitch_registration_attempts_total
+    freeswitch_registration_failures_total
+    freeswitch_registrations_total
+    freeswitch_sessions_total
+    freeswitch_sessions_answered_total
+    freeswitch_sessions_failed_total
+    freeswitch_sessions_inbound_total
+    freeswitch_sessions_inbound_answered_total
+    freeswitch_sessions_inbound_failed_total
+    freeswitch_sessions_outbound_total
+    freeswitch_sessions_outbound_answered_total
+    freeswitch_sessions_outbound_failed_total
+
+Gauges::
+
     freeswitch_sessions_active
-    freeswitch_sessions_answered
     freeswitch_sessions_asr
-    freeswitch_sessions_failed
-    freeswitch_sessions_inbound
-    freeswitch_sessions_inbound_answered
-    freeswitch_sessions_inbound_failed
-    freeswitch_sessions_outbound
-    freeswitch_sessions_outbound_answered
-    freeswitch_sessions_outbound_failed
+    freeswitch_registrations_active
 
 You can also use FreeSWITCH ESL APIs to create your own counters or gauges::
 
