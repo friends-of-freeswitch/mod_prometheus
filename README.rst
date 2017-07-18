@@ -29,21 +29,23 @@ Installation instructions::
     # Load the module:
     $ fs_cli -x 'load libmod_prometheus'
 
-    # Make sure it's loaded and listening to TCP port 6780
+    # Make sure it's loaded and listening to TCP port 9282
     $ fs_cli -x 'module_exists libmod_prometheus'
     true
 
-    $ netstat -nl | grep 6780
-    tcp        0      0 0.0.0.0:6780            0.0.0.0:*               LISTEN
+    $ netstat -nl | grep 9282
+    tcp        0      0 0.0.0.0:9282            0.0.0.0:*               LISTEN
     
     # For auto-load the module add this line at the end of your modules.conf 
     $ sudo vi /etc/freeswitch/autoload_configs/modules.conf.xml
 
         <load module="libmod_prometheus"/>
     
-Now you can access your host at port 6780 to check your metrics:
-http://YOUR_HOST:6780/
+Now you can access your host at port 9282 to check your metrics::
 
+    $ curl http://127.0.0.1:9282/metrics
+
+The /metrics url path is not required but it could be required in the future as it's recommended by the Prometheus guidelines.
 
 Metrics
 =======

@@ -139,7 +139,8 @@ impl Index<FSGauge> for [Arc<Mutex<Gauge>>] {
 
 fn prometheus_load(mod_int: &ModInterface) -> Status {
     unsafe {
-        let reg = Box::new(Arc::new(Mutex::new(Registry::new("0.0.0.0".to_string(), 6780))));
+        // FIXME: use config api to fetch the port from a config file
+        let reg = Box::new(Arc::new(Mutex::new(Registry::new("0.0.0.0".to_string(), 9282))));
         REGPTR = Box::into_raw(reg);
     };
     let reg = unsafe { &*REGPTR };
