@@ -439,4 +439,4 @@ static MOD_PROMETHEUS_DEF: ModDefinition = ModDefinition {
     shutdown: Some(prometheus_unload)
 };
 
-freeswitch_export_mod!(libmod_prometheus_module_interface, MOD_PROMETHEUS_DEF);
+freeswitch_export_mod!(mod_prometheus_module_interface, MOD_PROMETHEUS_DEF);
