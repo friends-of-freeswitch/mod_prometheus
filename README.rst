@@ -24,13 +24,13 @@ Installation instructions::
     $ cargo build
 
     # Copy the module to your FreeSWITCH modules directory:
-    $ sudo cp target/debug/libmod_prometheus.so `fs_cli -x 'global_getvar mod_dir'`
+    $ sudo cp target/debug/libmod_prometheus.so `fs_cli -x 'global_getvar mod_dir'`/mod_prometheus.so
 
     # Load the module:
-    $ fs_cli -x 'load libmod_prometheus'
+    $ fs_cli -x 'load mod_prometheus'
 
     # Make sure it's loaded and listening to TCP port 9282
-    $ fs_cli -x 'module_exists libmod_prometheus'
+    $ fs_cli -x 'module_exists mod_prometheus'
     true
 
     $ netstat -nl | grep 9282
@@ -39,7 +39,7 @@ Installation instructions::
     # For auto-load the module add this line at the end of your modules.conf 
     $ sudo vi /etc/freeswitch/autoload_configs/modules.conf.xml
 
-        <load module="libmod_prometheus"/>
+        <load module="mod_prometheus"/>
     
 Now you can access your host at port 9282 to check your metrics::
 
