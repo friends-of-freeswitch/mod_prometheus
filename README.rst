@@ -1,6 +1,9 @@
 FreeSWITCH Prometheus Module
 ----------------------------
 
+**WARNING**: This module has serious bugs and does not produce reliable metrics at the moment. While I hope I can find the time to fix it soon, I'd rather people not waste their
+time trying to install and use it when the results won't be usable in a production environment.
+
 This module exposes FreeSWITCH metrics for scraping by
 `Prometheus
 <https://prometheus.io/>`_.
